@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini CRM — заявки</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #16181d; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #c8963e; --new: #2563eb; --in_progress: #d97706; --done: #059669; --rejected: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #171a21; --text: #eef0f4; --muted: #9aa3b2; --line: #262b36; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 2; }
+  header h1 { margin: 0; font-size: 18px; }
+  header h1 span { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .stat b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .filters button { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; }
+  .filters button.active { background: var(--text); color: var(--card); border-color: var(--text); }
+  .list { display: grid; gap: 10px; }
+  .lead { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--line)); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center; }
+  .lead h3 { margin: 0; font-size: 16px; }
+  .lead .meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .lead .meta a { color: inherit; }
+  .lead select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .badge { white-space: nowrap; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--c) 15%, transparent); color: var(--c); font-weight: 600; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  @media (max-width: 600px) {
+    .lead { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat { padding: 10px 12px; }
+    .stat b { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mini <span>CRM</span></h1>
+  <span class="muted" id="updated">Завантаження…</span>
+</header>
+<main>
+  <section class="stats" id="stats"></section>
+  <nav class="filters" id="filters"></nav>
+  <section class="list" id="list"></section>
+</main>
+<script>
+  let statuses = {};
+  let current = "";
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const color = (key) => `var(--${key})`;
+
+  // location.origin без логіна/пароля — fetch не приймає URL з обліковими даними
+  const API = location.origin + "/api/leads";
+
+  async function load() {
+    let res;
+    try {
+      res = await fetch(API + (current ? `?status=${current}` : ""));
+    } catch (e) {
+      document.getElementById("updated").textContent = "Немає зв'язку з сервером";
+      return;
+    }
+    if (!res.ok) { document.getElementById("updated").textContent = "Помилка завантаження"; return; }
+    const data = await res.json();
+    statuses = data.statuses;
+    renderStats(data.stats);
+    renderFilters();
+    renderList(data.leads);
+    document.getElementById("updated").textContent = "Оновлено " + new Date().toLocaleTimeString("uk-UA");
+  }
+
+  function renderStats(s) {
+    const items = [["Сьогодні", s.today], ["Усього", s.total], ...Object.entries(statuses).map(([k, label]) => [label, s[k]])];
+    document.getElementById("stats").innerHTML = items.map(([label, n]) => `<div class="stat"><span class="muted">${esc(label)}</span><b>${n}</b></div>`).join("");
+  }
+
+  function renderFilters() {
+    const items = [["", "Усі"], ...Object.entries(statuses)];
+    const el = document.getElementById("filters");
+    el.innerHTML = items.map(([k, label]) => `<button data-k="${k}" class="${k === current ? "active" : ""}">${esc(label)}</button>`).join("");
+    el.querySelectorAll("button").forEach((b) => b.onclick = () => { current = b.dataset.k; load(); });
+  }
+
+  function renderList(leads) {
+    const el = document.getElementById("list");
+    if (!leads.length) { el.innerHTML = `<p class="empty">Заявок немає</p>`; return; }
+    el.innerHTML = leads.map((l) => `
+      <article class="lead" style="--c:${color(l.status)}">
+        <div>
+          <h3>#${l.id} · ${esc(l.name)} <span class="badge">${esc(statuses[l.status])}</span></h3>
+          <div class="meta">
+            <a href="tel:${esc(l.phone.replace(/[^\d+]/g, ""))}">📞 ${esc(l.phone)}</a>
+            <span>✂️ ${esc(l.service)}</span>
+            ${l.preferred_time ? `<span>🕒 ${esc(l.preferred_time)}</span>` : ""}
+            ${l.tg_username ? `<a href="https://t.me/${esc(l.tg_username)}" target="_blank" rel="noopener">✈️ @${esc(l.tg_username)}</a>` : ""}
+            <span>${l.source === "telegram" ? "Telegram" : "Сайт"} · ${esc(l.created_at.replace("T", " "))}</span>
+          </div>
+          ${l.comment ? `<div class="meta">💬 ${esc(l.comment)}</div>` : ""}
+        </div>
+        <select data-id="${l.id}" aria-label="Статус заявки">
+          ${Object.entries(statuses).map(([k, label]) => `<option value="${k}" ${k === l.status ? "selected" : ""}>${esc(label)}</option>`).join("")}
+        </select>
+      </article>`).join("");
+    el.querySelectorAll("select").forEach((s) => s.onchange = async () => {
+      await fetch(`${API}/${s.dataset.id}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: s.value }) });
+      load();
+    });
+  }
+
+  load();
+  setInterval(load, 10000);
+</script>
+</body>
+</html>
