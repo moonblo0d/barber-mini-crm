@@ -1,4 +1,5 @@
 """Веб-частина: лендинг, публічний API для форми та захищена адмін-панель."""
+import asyncio
 import base64
 import logging
 import re
@@ -109,7 +110,10 @@ async def api_create_lead(request: web.Request) -> web.Response:
     if bot is not None:
         from bot import notify_admin  # локальний імпорт, щоб веб працював і без бота
 
-        await notify_admin(bot, lead)
+        # Сповіщення у фоні: клієнт не чекає, поки відповість Telegram
+        task = asyncio.create_task(notify_admin(bot, lead))
+        request.app["bg_tasks"].add(task)
+        task.add_done_callback(request.app["bg_tasks"].discard)
     return web.json_response({"ok": True, "id": lead["id"]}, status=201)
 
 
@@ -138,6 +142,7 @@ async def api_services(_: web.Request) -> web.Response:
 
 def create_app(bot=None) -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
+    app["bg_tasks"] = set()
     if bot is not None:
         app["bot"] = bot
     app.router.add_get("/", landing)

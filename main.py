@@ -14,7 +14,7 @@ log = logging.getLogger("main")
 
 async def wait_for_telegram(bot) -> None:
     """Перевіряє токен; якщо Telegram просить зачекати (flood control) — чекає й пробує знову."""
-    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
 
     while True:
         try:
@@ -24,6 +24,9 @@ async def wait_for_telegram(bot) -> None:
         except TelegramRetryAfter as e:
             log.warning("Telegram просить зачекати %s с — чекаю…", e.retry_after)
             await asyncio.sleep(e.retry_after + 1)
+        except TelegramNetworkError:
+            log.warning("Немає зв'язку з Telegram — повтор через 15 с (сайт працює далі)")
+            await asyncio.sleep(15)
 
 
 async def setup_bot_profile(bot) -> None:
